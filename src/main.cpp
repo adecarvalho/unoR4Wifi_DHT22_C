@@ -6,6 +6,9 @@ const uint8_t LED_PIN = 13;
 const uint8_t DHT_PIN = 2;
 const uint32_t PERIOD = 3000;
 
+const float a = 17.27;
+const float b = 237.7;
+
 // enum
 enum DHT_STATUS
 {
@@ -22,6 +25,7 @@ void DHT_begin();
 DHT_STATUS DHT_startConversion();
 uint8_t DHT_readByte();
 DHT_STATUS DHT_readValues();
+float DHT_dewPoint(float temp, float hum);
 
 // obj
 Ticker mticker(action, PERIOD, 0, MILLIS);
@@ -29,6 +33,7 @@ Ticker mticker(action, PERIOD, 0, MILLIS);
 // var global
 float theTemperature = 0;
 float theHumidity = 0;
+float theDewPoint = 0;
 
 //**********
 void action()
@@ -37,14 +42,32 @@ void action()
 
   if (status == DHT_OK)
   {
+    theDewPoint = DHT_dewPoint(theTemperature, theHumidity);
+    //
     Serial.println(theHumidity);
     Serial.println(theTemperature);
+    Serial.println(theDewPoint);
     Serial.println("*****");
   }
   else
   {
     Serial.println(status);
   }
+}
+//************** */
+float DHT_dewPoint(float temp, float hum)
+{
+  float dewpoint = 0.0f;
+  //
+  if (hum > 0)
+  {
+    float psi = (a * temp) / (b + temp);
+    psi += log(hum / 100.0);
+    //
+    dewpoint = (b * psi) / (a - psi);
+  }
+  //
+  return dewpoint;
 }
 //************** */
 void DHT_begin()
@@ -127,40 +150,40 @@ DHT_STATUS DHT_readValues()
 {
   DHT_STATUS status = DHT_OK;
   uint8_t signe = 0;
-  uint8_t check = 0;
   uint8_t sum = 0;
-  uint8_t hum_upper = 0;
-  uint8_t hum_lower = 0;
-  uint8_t temp_upper = 0;
-  uint8_t temp_lower = 0;
+  uint8_t tab[5] = {0x00, 0x00, 0x00, 0x00, 0x00};
+  uint8_t index = 0;
   //
   status = DHT_startConversion();
 
   if (status == DHT_OK)
   {
-    hum_upper = DHT_readByte();
-    hum_lower = DHT_readByte();
-    temp_upper = DHT_readByte();
-    temp_lower = DHT_readByte();
-    check = DHT_readByte();
-    //
-    sum = hum_upper + hum_lower + temp_upper + temp_lower;
-    //
-    if (check == sum)
+    for (int i = 0; i < 5; i++)
     {
-      theHumidity = (hum_upper << 8) | (hum_lower);
+      tab[index] = DHT_readByte();
+      index++;
+    }
+    // check sum
+    for (int i = 0; i < 4; i++)
+    {
+      sum += tab[i];
+    }
+    //
+    if (tab[4] == sum)
+    {
+      theHumidity = (tab[0] << 8) | (tab[1]);
       theHumidity = theHumidity / 10.0;
       //
-      signe = temp_upper & 0b10000000;
+      signe = tab[2] & 0x80;
       if (signe > 0)
       {
-        temp_upper = temp_upper & 0b01111111;
-        theTemperature = (temp_upper << 8) | (temp_lower);
+        tab[2] = tab[2] & 0x7F;
+        theTemperature = (tab[2] << 8) | (tab[3]);
         theTemperature = (theTemperature / 10.0) * (-1);
       }
       else
       {
-        theTemperature = (temp_upper << 8) | (temp_lower);
+        theTemperature = (tab[2] << 8) | (tab[3]);
         theTemperature = theTemperature / 10.0;
       }
       return DHT_OK;
@@ -169,7 +192,6 @@ DHT_STATUS DHT_readValues()
     else
     {
       return DHT_ERROR_CHECK_SUM;
-      //
     }
   }
   //
